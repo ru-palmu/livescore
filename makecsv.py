@@ -15,7 +15,7 @@ def main():
 
   parser = argparse.ArgumentParser(description='')
   parser.add_argument('args', nargs='+', help="input json files")
-  parser.add_argument('-f', help="output file")
+  parser.add_argument('-f', help="output file; default STDOUT")
   args = parser.parse_args()
 
   fp = sys.stdout
