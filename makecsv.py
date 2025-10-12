@@ -7,6 +7,7 @@
 import csv
 import json
 import sys
+import io
 import numpy as np
 
 
@@ -16,11 +17,15 @@ def main():
   parser = argparse.ArgumentParser(description='')
   parser.add_argument('args', nargs='+', help="input json files")
   parser.add_argument('-f', help="output file; default STDOUT")
+  parser.add_argument('--enc', choices=['utf-8', 'shift_jis'],
+                      default='shift_jis',
+                      help="output file encoding; default shift_jis")
   args = parser.parse_args()
 
-  fp = sys.stdout
   if args.f:
-    fp = open(args.f, 'w', encoding='utf-8', newline='')
+    fp = open(args.f, 'w', encoding=args.enc, newline='')
+  else:
+    fp = io.TextIOWrapper(sys.stdout.buffer, encoding=args.enc, newline='')
 
   writer = csv.writer(fp)
   if True:
@@ -28,6 +33,8 @@ def main():
                      'max', '>= 1k', '>= 100', '>= 10', '>= 1', '>= 0'])
 
   for fname in args.args:
+    if not fname.endswith('.json'):
+      continue
     print(fname, file=sys.stderr)
     with open(fname, 'r', encoding='utf-8') as f:
       data = json.load(f)
