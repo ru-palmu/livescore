@@ -8,7 +8,21 @@ import csv
 import json
 import sys
 import io
+import math
 import numpy as np
+
+
+def row_append_float(row, v: float, m: int = 1):
+  if m == 3:
+    row.append(f'{v:.3f}')
+  elif m == 2:
+    row.append(f'{v:.2f}')
+  elif m == 1:
+    row.append(f'{v:.1f}')
+  elif m == 0:
+    row.append(int(v))
+  else:
+    raise Exception(f"invalid m: {m}")
 
 
 def main():
@@ -30,7 +44,11 @@ def main():
   writer = csv.writer(fp)
   if True:
     writer.writerow(['label', 'gift', 'livescore', '3xgift', 'score/gift',
-                     'max', '>= 1k', '>= 100', '>= 10', '>= 1', '>= 0'])
+                     'max', '>= 1k', '>= 100', '>= 10', '>= 1', '>= 0',
+                     'avg>=5', 'avg>=0',
+                     'median>=5', 'median>=0',
+                     'top1_ratio', 'top3_ratio', 'top5_ratio',
+                     'top5%_ratio', 'top10%_ratio'])
 
   for fname in args.args:
     if not fname.endswith('.json'):
@@ -41,20 +59,42 @@ def main():
 
     gifts = np.array(data.get('gift', []))
     livescore = int(data.get('livescore', 0))
-    gift = np.sum(gifts)
+    total_gift = np.sum(gifts)
+    if total_gift == 0:
+      raise Exception(f"0 total_gift: {data}")
 
     row = [data.get('label', fname),
-           gift,
+           total_gift,
            livescore,
-           gift * 3,
-           livescore / gift,
+           total_gift * 3,
+           f'{livescore / total_gift:.3f}',
            max(gifts),
-           np.sum(gifts >= 1000),
-           np.sum(gifts >= 100),
-           np.sum(gifts >= 10),
-           np.sum(gifts >= 1),
-           np.sum(gifts >= 0),
-          ]
+           ]
+    # p コイン以上のギフト人数
+    for p in [1000, 100, 10, 1, 0]:
+      row.append(np.sum(gifts >= p))
+
+    # 5コイン以上のギフト平均
+    gifts5 = gifts[gifts >= 5]
+    row_append_float(row, np.sum(gifts5) / len(gifts5), 1)
+    # 0コイン以上のギフト平均
+    row_append_float(row, np.sum(gifts) / len(gifts), 1)
+
+    # 5コイン以上のギフト中央値
+    row.append(int(np.median(gifts5)))
+    row.append(int(np.median(gifts)))
+
+    # 1位のギフト割合
+    for n in [1, 3, 5]:
+      row_append_float(row, 100 * np.sum(gifts[:n]) / total_gift, 1)
+
+    # top5%
+    gifts_top5 = gifts[:math.ceil(len(gifts) * .05)]
+    gifts_top10 = gifts[:math.ceil(len(gifts) * .10)]
+
+    row_append_float(row, 100 * np.sum(gifts_top5) / total_gift, 1)
+    row_append_float(row, 100 * np.sum(gifts_top10) / total_gift, 1)
+
     writer.writerow(row)
 
 
