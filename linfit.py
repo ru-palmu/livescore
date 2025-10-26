@@ -6,6 +6,7 @@
 
 import json
 import numpy as np
+from common import is_excluded
 # import os
 
 
@@ -28,11 +29,41 @@ def vif(X):
   return np.array(vifs)
 
 
+def linfit(X, Y, aic=False):
+  if len(X) != len(Y):
+    raise ValueError("len(X) != len(Y): {} != {}".format(len(X), len(Y)))
+  if (len(X) == 0):
+    print("X is empty")
+    return
+  a = np.linalg.lstsq(X, Y, rcond=-1)
+  y_pred = []
+  for i in range(len(Y)):
+    y_pred.append(np.dot(a[0], X[i]))
+  y_pred = np.array(y_pred)
+  rss = np.sum((y_pred - Y)**2)
+  tss = np.sum((Y - np.mean(Y))**2)
+  assert tss > 0, (X.shape, Y.shape)
+  r2 = 1 - rss / tss
+
+  print("# coeff #=", len(a[0]), ", ", a)
+  print("min/max estimation error", np.min(y_pred - Y), np.max(y_pred - Y))
+  print("R^2 =", r2)   # 1 に近い（大きい）ほど良い
+  if aic:
+    aic = len(Y) * np.log(rss / len(Y)) + 2 * len(a[0])
+    _vif = vif(X[:, :len(a[0])])
+    print("aic =", aic)  # 小さいほど良い
+    print("vif =", _vif)  # 小さいほど良い
+  print()
+
+
 def main():
   import argparse
 
   parser = argparse.ArgumentParser(description='')
   parser.add_argument('args', nargs='+')
+  parser.add_argument('--xmin', default=0, type=int)
+  parser.add_argument('--xmax', default=100000000, type=int)
+  parser.add_argument('--exclude', action='store_true')
   # parser.add_argument('-f', required=True)
   # parser.add_argument('-f', required=True)
   args = parser.parse_args()
@@ -48,14 +79,18 @@ def main():
       data = json.load(f)
 
     gift = np.array(data['gift'])
-    if gift.sum() < 50000 and False:
+    gift_sum = gift.sum()
+    if not (args.xmin <= gift_sum <= args.xmax):
       continue
 
-    ys.append(data['livescore'])
+    livescore = int(data['livescore'])
+    if args.exclude and is_excluded(gift_sum, livescore):
+      continue
 
-    gift = np.array(data['gift'])
+    ys.append(livescore)
+
     x = [1]
-    x.append(gift.sum())
+    x.append(gift_sum)
     n[0] = len(x)
 
     # 100 以上の人数
@@ -78,38 +113,20 @@ def main():
     x.append(n5)
     n[3] = len(x)
 
-
     xs.append(x)
 
   xs = np.array(xs, dtype=np.float64)
   ys = np.array(ys, dtype=np.float64)
 
-  ai = [0] * len(n)
+  print("@@  #data=", len(ys))
   for i in range(len(n)):
-    ai[i] = np.linalg.lstsq(xs[:, :n[i]], ys, rcond=-1)
+    xx = xs[:, :n[i]]
+    linfit(xx, ys, aic=True)
 
-  print("#data=", len(ys))
-  for a in ai:
-    y_pred = []
-    for i in range(len(ys)):
-      y_pred.append(np.dot(a[0], xs[i][:len(a[0])]))
-
-    y_pred = np.array(y_pred)
-
-    rss = np.sum((y_pred - ys)**2)
-    tss = np.sum((ys - np.mean(ys))**2)
-    r2 = 1 - rss / tss
-    aic = len(ys) * np.log(rss / len(ys)) + 2 * len(a[0])
-    _vif = vif(xs[:, :len(a[0])])
-    print()
-    print("# coeff =", len(a[0]))
-    print("R^2 =", r2)   # 1 に近い（大きい）ほど良い
-    print("aic =", aic)  # 小さいほど良い
-    print("vif =", _vif)  # 小さいほど良い
-    print("max=", np.max(y_pred - ys))
-    print("min=", np.min(y_pred - ys))
-    print(a)
-    print()
+  print("  - aic: 小さいほど良い. 比較に使う")
+  print("  - vif: 小さいほど良い. 5より大きいパラメータは多重共線性の疑いあり")
+  print("        2=total_gift, 3= >=0coin, 4= >=100coin, 5= >=5coin")
+  print()
 
 
 if __name__ == '__main__':
