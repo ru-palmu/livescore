@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
 from common import is_excluded, ru_model
 import re
+from typing import Callable
 
 
 def comma_formatter(x, pos):
@@ -99,7 +100,7 @@ def write_csv_file(fp, jsons: dict):
 def write_csv_row(writer, data: dict):
   gifts = np.array(data.get('gift', []))
   livescore = int(data.get('livescore', 0))
-  total_gift = np.sum(gifts)
+  total_gift = data.get('total_gift', np.sum(gifts))
   if total_gift == 0:
     raise Exception(f"0 total_gift: {data}")
 
@@ -144,53 +145,54 @@ def write_csv_row(writer, data: dict):
   writer.writerow(row)
 
 
-def get_sorted_xy(jsons: dict) -> list:
+def get_sorted_xy(jsons: dict, slicer: Callable) -> list:
   """(total_gift, livescore) のリストを取得し，
   total_gift でソートして返す。
   """
   xy = []
   for dirname, data_list in jsons.items():
     for data in data_list:
-      gifts = np.array(data.get('gift', []))
       livescore = int(data.get('livescore', 0))
-      total_gift = np.sum(gifts)
+      total_gift = data.get('total_gift', 0)
       if total_gift == 0:
         continue
-      xy.append((total_gift, livescore, data,))
+      xy.append((total_gift, livescore, data, slicer(data)))
 
   # x でソートする
   xy = sorted(xy, key=lambda v: v[0])
   return xy
 
 
-def slice_dimension_xy(xy: list, dimension) -> set:
-  """はねていないデータ群"""
-  xinvalid = set()
-  if not dimension:
-    return xinvalid
-  if dimension == "exclude":
-    return get_xyinvalid(xy)
-  if not isinstance(dimension, str):
-    raise Exception(f"invalid dimension type: {type(dimension)}")
+def slice_dimension(dimension) -> Callable:
+  """はねていないデータ群
 
-  if re.fullmatch(r'20\d\d[01]\d[0-3]\d', dimension):
+  returns func(json_data) -> bool
+  """
+
+  if not dimension:
+    return lambda d: True
+  elif dimension == "exclude":
+    return lambda d: not is_excluded(d['total_gift'], d['livescore'])
+  elif not isinstance(dimension, str):
+    raise Exception(f"invalid dimension type: {type(dimension)}")
+  elif re.fullmatch(r'20\d\d[01]\d[0-3]\d', dimension):
     # 日付で区切る
-    slicer = lambda d: d['date'] == dimension
+    return lambda d: d['date'] == dimension
   elif re.fullmatch(r'>20\d\d[01]\d[0-3]\d', dimension):
     date_limit = dimension[1:]
-    slicer = lambda d: d['date'] > date_limit
+    return lambda d: d['date'] > date_limit
   elif re.fullmatch(r'>=20\d\d[01]\d[0-3]\d', dimension):
     date_limit = dimension[2:]
-    slicer = lambda d: d['date'] >= date_limit
+    return lambda d: d['date'] >= date_limit
   elif re.fullmatch(r'score\d+', dimension):
     score_limit = int(dimension[6:])
-    slicer = lambda d: int(d.get('livescore', 0)) == score_limit
+    return lambda d: int(d.get('livescore', 0)) == score_limit
   elif re.fullmatch(r'>score\d+', dimension):
     score_limit = int(dimension[6:])
-    slicer = lambda d: int(d.get('livescore', 0)) > score_limit
+    return lambda d: int(d.get('livescore', 0)) > score_limit
   elif re.fullmatch(r'<score\d+', dimension):
     score_limit = int(dimension[6:])
-    slicer = lambda d: int(d.get('livescore', 0)) < score_limit
+    return lambda d: int(d.get('livescore', 0)) < score_limit
   elif re.fullmatch(r'[><=]?20\d\d[01]\d[0-3]\d-\d+', dimension):
     parts = dimension.split('-')
     if len(parts) != 2:
@@ -199,16 +201,15 @@ def slice_dimension_xy(xy: list, dimension) -> set:
       date_limit = int(parts[0])
     rank_limit = int(parts[1])
     if dimension[0] == '>':
-      slicer = lambda d: (int(d['date']) == date_limit and
-                          d.get('rank', 0) > rank_limit)
+      return lambda d: (int(d['date']) == date_limit and
+                        d.get('rank', 0) > rank_limit)
     elif dimension[0] == '<':
-      slicer = lambda d: (int(d['date']) == date_limit and
-                          d.get('rank', 0) < rank_limit)
+      return lambda d: (int(d['date']) == date_limit and
+                        d.get('rank', 0) < rank_limit)
     else:  # '='
-      slicer = lambda d: (int(d['date']) == date_limit and
-                          d.get('rank', 0) == rank_limit)
-  else:
-    raise Exception(f"invalid dimension: {dimension}")
+      return lambda d: (int(d['date']) == date_limit and
+                        d.get('rank', 0) == rank_limit)
+  raise Exception(f"invalid dimension: {dimension}")
 
   for i, (_, _, d) in enumerate(xy):
     if 'date' not in d:
@@ -235,7 +236,7 @@ def get_xyinvalid(xy: list) -> set:
   return xinvalid
 
 
-def set_xylim_ax1(ax1, xlim, ylim, xmax):
+def set_xylim_ax1(ax1, xlim, ylim):
   """左軸の x/y 軸範囲を設定する。
   """
   if xlim:
@@ -248,11 +249,9 @@ def set_xylim_ax1(ax1, xlim, ylim, xmax):
     ax1.set_ylim(0, ylim)
   else:
     ax1.set_ylim(0, None)
-    xlim = xmax
-  return xlim
 
 
-def plot_rank_zones(ax2, xlim):
+def plot_rank_zones(ax2, xlim, zorder=0):
   obi = {
       # (min_+2, max_+6, color, max_+2, max_+4, xlim_max)
       'SS': (1, 300_000, 810_000, 1_800_000),
@@ -295,12 +294,14 @@ def plot_rank_zones(ax2, xlim):
         x2, x4,
         color=color,
         alpha=0.8,
+        zorder=zorder,
     )
     ax2.fill_betweenx(
         [y1, y2],
         x4, x6,
         color=color,
         alpha=0.4,
+        zorder=zorder,
     )
 
     if x6 > xlim:
@@ -317,6 +318,7 @@ def plot_rank_zones(ax2, xlim):
         fontweight='bold',
         horizontalalignment='center',
         verticalalignment='center',
+        zorder=zorder,
     )
 
 
@@ -338,61 +340,86 @@ def write_scatter(fname: str, jsons: dict,
   ax1.set_ylabel('Live Score')
   ax2.set_ylabel('Live Score / Gift')
 
-  xy = get_sorted_xy(jsons)
+  slicer = slice_dimension(dimension)
+  xy = get_sorted_xy(jsons, slicer)
   assert len(xy) > 0
 
-  xinvalid = slice_dimension_xy(xy, dimension)
-
+  # ==================================
   # 散布図
-  x = [v[0] for v in xy]
-  y_livescore = [v[1] for v in xy]
+  # ==================================
+
+  xinvalid = [v[0] for v in xy if not v[3]]
   if plot_livescore:
     # 左軸：gift - livescore の散布図を描画する
-    ax1.scatter(x, y_livescore,
-                label='Real data (' + str(len(xy)) + ' samples)',
-                color='#1f77b4', alpha=0.5, s=5)
+    y_livescore = [v[1] for v in xy if not v[3]]
+    ax1.scatter(xinvalid, y_livescore,
+                color='#1f77b4', alpha=0.8, s=2, zorder=8,
+                marker='.')
 
   if plot_rate:
     # 右軸：livescore / gift の散布図を描画する
-    xx = [xy[i][0] for i in xinvalid]
-    y_livescore_per_gift_invalid = [xy[i][1] / xy[i][0] for i in xinvalid]
-    ax2.scatter(xx, y_livescore_per_gift_invalid,
-                color='#888888', alpha=0.5, s=3)
+    y_livescore_per_gift_invalid = [v[1] / v[0] for v in xy if not v[3]]
+    ax2.scatter(xinvalid, y_livescore_per_gift_invalid,
+                color='#FFCC00', alpha=0.8, s=2, zorder=8,
+                marker='.')
 
-    xvalid = [xy[i] for i, v in enumerate(xy) if i not in xinvalid]
-    xx = [v[0] for v in xvalid]
-    y_livescore_per_gift = [v[1] / v[0] for v in xvalid]
+  xvalid = [v[0] for v in xy if v[3]]
+  edgecolors = 'face'
+  linewidths = None
+  s = 2
+  if len(xinvalid) > 0:
+    edgecolors = 'black'
+    if len(xvalid) < 10:
+      s = 20
+    else:
+      s = 5
 
+  if plot_livescore:
+    # 左軸：gift - livescore の散布図を描画する
+    y_livescore = [v[1] for v in xy if v[3]]
+    ax1.scatter(xvalid, y_livescore,
+                label='Real score',
+                color='#1f77b4', alpha=0.3, s=s, marker="o",
+                edgecolors=edgecolors, linewidths=linewidths,
+                zorder=10)
+  if plot_rate:
+    # 右軸：livescore / gift の散布図を描画する
+    y_livescore_per_gift = [v[1] / v[0] for v in xy if v[3]]
     label = 'Real score / gift'
     if dimension:
       label += f' ({dimension})'
 
-    if len(xx) < 10:
-      ax2.scatter(xx, y_livescore_per_gift, label=label,
-                  color='#FFCC00', alpha=0.9, s=10, marker='*')
-    else:
-      ax2.scatter(xx, y_livescore_per_gift, label=label,
-                  color='#FFCC00', alpha=0.5, s=3)
+    ax2.scatter(xvalid, y_livescore_per_gift, label=label,
+                color='#FFCC00', alpha=0.3, s=s, marker='o',
+                edgecolors=edgecolors, linewidths=linewidths,
+                zorder=10)
 
+  # ==================================
+  # モデル線
+  # ==================================
   # 旧モデル
+  x = [v[0] for v in xy]
   xmax = x[-1]
   x = [0.1] + x + [xmax * 1.1]
   if plot_livescore:
     # 左軸：gift - livescore のモデル線を描画する
     y = [3 * v for v in x]
     ax1.plot(x, y, label='3x gift',
-             color='#d62728', linestyle='dashed')
+             color='#d62728', linestyle='dashed',
+             zorder=3, alpha=0.3)
 
     # 新モデル
     y = [ru_model(v) for v in x]
     ax1.plot(x, y, label='(ru) model',
-             color='#2ca02c')
+             color='#2ca02c',
+             zorder=3, alpha=0.3)
 
   y = [ru_model(v) / v for v in x]
   if plot_rate:
     # 右軸：livescore / gift のモデル線を描画する
     ax2.plot(x, y, label='(ru) model score / gift',
-             color='#2ca02c', linestyle='-.')
+             color='#2ca02c', linestyle='-.',
+             zorder=3, alpha=0.3)
 
   # x/y 軸を原点交差
   # ax1.spines['left'].set_position('zero')
@@ -400,15 +427,19 @@ def write_scatter(fname: str, jsons: dict,
   # ax2.spines['bottom'].set_color('none')
   # ax2.spines['left'].set_color('none')
 
-  xlim = set_xylim_ax1(ax1, xlim, ylim, xmax)
+  # ==================================
+  # ランク帯塗りつぶし
+  # ==================================
+  set_xylim_ax1(ax1, xlim, ylim)
+  xlim2 = xlim if xlim else xmax
+  plot_rank_zones(ax2, xlim2, zorder=1)
 
   ax2.set_ylim(2.4, 3.5)
   ax2.set_yticks([2.6, 2.8, 3.0, 3.2, 3.4])
 
-  # ==================================
-  # ランク帯塗りつぶし
-  # ==================================
-  plot_rank_zones(ax2, xlim)
+  ax1.set_zorder(2)
+  ax2.set_zorder(1)
+  ax1.patch.set_visible(False)
 
   ax1.set_title(title)
   fig.legend(loc='upper center', bbox_to_anchor=(0.5, 0.93), ncol=1)
