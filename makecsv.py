@@ -15,7 +15,7 @@ import numpy as np
 from pathlib import Path
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
-from common import is_excluded, ru_model
+from common import is_excluded, ru_model, ru_model_x
 import re
 from typing import Callable
 
@@ -52,7 +52,31 @@ def row_append_float(row, v: float, m: int = 1):
     raise Exception(f"invalid m: {m}")
 
 
-def readJsons(fnames: list, xlim) -> dict:
+def limitedJsons(jsons: dict, xmin, xmax, y2min, y2max) -> dict:
+  ret = {}
+  y2mind = y2min
+  y2maxd = y2max
+  for dirname, json_list in jsons.items():
+    for data in json_list:
+      if xmin is not None and data['total_gift'] < xmin:
+        continue
+      elif xmax is not None and data['total_gift'] > xmax:
+        continue
+      if dirname not in ret:
+        ret[dirname] = []
+      v = data['livescore'] / data['total_gift']
+      if v > y2max:
+        y2maxd = max(y2maxd, v)
+        continue
+      if v < y2min:
+        y2mind = min(y2mind, v)
+        continue
+      ret[dirname].append(data)
+  print(f"#excluded by y2: {y2mind} .. {y2maxd}")
+  return ret
+
+
+def readJsons(fnames: list) -> dict:
   ret = {}
   for fname in fnames:
     if not fname.endswith('.json'):
@@ -60,6 +84,7 @@ def readJsons(fnames: list, xlim) -> dict:
     with open(fname, 'r', encoding='utf-8') as f:
       data = json.load(f)
     data['filename'] = fname
+    data['livescore'] = int(data.get('livescore', 0))
     if 'date' not in data:
       # ファイル名から日付を取得する
       path = Path(fname)
@@ -68,8 +93,8 @@ def readJsons(fnames: list, xlim) -> dict:
 
     gifts = np.array(data.get('gift', []))
     data['total_gift'] = gifts.sum()
-    if xlim and data['total_gift'] > xlim:
-      continue
+    # if xlim and data['total_gift'] > xlim:
+    #   continue
 
     # ディレクトリ名をキーにする
     path = Path(fname)
@@ -211,14 +236,6 @@ def slice_dimension(dimension) -> Callable:
                         d.get('rank', 0) == rank_limit)
   raise Exception(f"invalid dimension: {dimension}")
 
-  for i, (_, _, d) in enumerate(xy):
-    if 'date' not in d:
-      print(d)
-    if not slicer(d):
-      xinvalid.add(i)
-
-  return xinvalid
-
 
 def get_xyinvalid(xy: list) -> set:
   xinvalid = set()
@@ -251,7 +268,8 @@ def set_xylim_ax1(ax1, xlim, ylim):
     ax1.set_ylim(0, None)
 
 
-def plot_rank_zones(ax2, xlim, zorder=0):
+def plot_rank_zones(ax2, xlim, ymin: float, zorder=0):
+  assert isinstance(ymin, float), ymin
   obi = {
       # (min_+2, max_+6, color, max_+2, max_+4, xlim_max)
       'SS': (1, 300_000, 810_000, 1_800_000),
@@ -281,7 +299,7 @@ def plot_rank_zones(ax2, xlim, zorder=0):
     x4 = s4 / 3
     x6 = s6 / 3
     color = colors[i]
-    y1 = 2.41 + i * 0.02
+    y1 = ymin + 0.01 + i * 0.02
     y2 = y1 + 0.01
 
     if xlim_max and xlim >= xlim_max:
@@ -326,6 +344,7 @@ def write_scatter(fname: str, jsons: dict,
                   plot_livescore: bool = True,
                   plot_rate: bool = True,
                   xlim=None, ylim=None, title: str = '',
+                  ymin: float = 2.4, ymax: float = 3.5,
                   dimension=None):
 
   fig, ax1 = plt.subplots()
@@ -397,27 +416,31 @@ def write_scatter(fname: str, jsons: dict,
   # ==================================
   # モデル線
   # ==================================
-  # 旧モデル
   x = [v[0] for v in xy]
-  xmax = x[-1]
-  x = [0.1] + x + [xmax * 1.1]
+  xmin = 0
+  xmax = x[-1] * 1.1
   if plot_livescore:
     # 左軸：gift - livescore のモデル線を描画する
-    y = [3 * v for v in x]
-    ax1.plot(x, y, label='3x gift',
+
+    # 旧モデル (３倍）
+    x_3 = [xmin, xmax]
+    y = [3 * v for v in x_3]
+    ax1.plot(x_3, y, label='3x gift',
              color='#d62728', linestyle='dashed',
              zorder=3, alpha=0.3)
 
     # 新モデル
-    y = [ru_model(v) for v in x]
-    ax1.plot(x, y, label='(ru) model',
+    x_r = ru_model_x(xmin, xmax)
+    y = [ru_model(v) for v in x_r]
+    ax1.plot(x_r, y, label='(ru) model',
              color='#2ca02c',
              zorder=3, alpha=0.3)
 
-  y = [ru_model(v) / v for v in x]
   if plot_rate:
     # 右軸：livescore / gift のモデル線を描画する
-    ax2.plot(x, y, label='(ru) model score / gift',
+    x_r = ru_model_x(xmin, xmax)
+    y = [ru_model(v) / v for v in x_r]
+    ax2.plot(x_r, y, label='(ru) model score / gift',
              color='#2ca02c', linestyle='-.',
              zorder=3, alpha=0.3)
 
@@ -432,10 +455,12 @@ def write_scatter(fname: str, jsons: dict,
   # ==================================
   set_xylim_ax1(ax1, xlim, ylim)
   xlim2 = xlim if xlim else xmax
-  plot_rank_zones(ax2, xlim2, zorder=1)
+  plot_rank_zones(ax2, xlim2, ymin, zorder=1)
 
-  ax2.set_ylim(2.4, 3.5)
-  ax2.set_yticks([2.6, 2.8, 3.0, 3.2, 3.4])
+  ax2.set_ylim(ymin, ymax)
+
+  yticks = np.arange(1.8, 4, 0.2)
+  ax2.set_yticks([v for v in yticks if ymin < v < ymax])
 
   ax1.set_zorder(2)
   ax2.set_zorder(1)
@@ -462,7 +487,11 @@ def main():
   parser.add_argument('-x', '--xlim', type=int,
                       help="Maximum value for the x-axis limit")
   parser.add_argument('-y', '--ylim', type=int,
-                      help="Maximum value for the y-axis limit")
+                      help="Maximum value for the y-axis limit (left)")
+  parser.add_argument('--ymin', type=float, default=2.4,
+                      help="Minimum value for the y-axis limit (right)")
+  parser.add_argument('--ymax', type=float, default=3.5,
+                      help="Maximum value for the y-axis limit (right)")
   parser.add_argument('-t', '--title',
                       help="title for scatter plot")
   parser.add_argument('--enc', choices=['utf-8', 'shift_jis'],
@@ -483,7 +512,7 @@ def main():
   # #############################
   # 引数解析
   # #############################
-  jsons = readJsons(args.args, args.xlim)
+  jsons = readJsons(args.args)
   if len(jsons) == 0:
     print("no valid json data")
     return 1
@@ -494,10 +523,14 @@ def main():
   write_csv_file(fp, jsons)
 
   if args.scatter:
+    # 描画に不要なデータは先に削除
+    jsons = limitedJsons(jsons, None, args.xlim, args.ymin, args.ymax)
+
     write_scatter(args.scatter, jsons,
                   plot_livescore=not args.no_livescore,
                   plot_rate=not args.no_rate,
                   xlim=args.xlim, ylim=args.ylim,
+                  ymin=args.ymin, ymax=args.ymax,
                   title=args.title if args.title else '',
                   dimension=args.dimension)
 
