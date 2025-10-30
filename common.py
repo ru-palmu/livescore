@@ -4,6 +4,46 @@
 """
 """
 
+from pathlib import Path
+import json
+import numpy as np
+
+
+def readJsons(fnames: list) -> dict:
+  ret = {}
+  for fname in fnames:
+    if not fname.endswith('.json'):
+      continue
+    with open(fname, 'r', encoding='utf-8') as f:
+      data = json.load(f)
+    data['filename'] = fname
+    data['livescore'] = int(data.get('livescore', 0))
+    if 'date' not in data:
+      # ファイル名から日付を取得する
+      path = Path(fname)
+      date_str = path.parent.name
+      data['date'] = date_str
+
+    gifts = np.array(data.get('gift', []))
+    data['total_gift'] = gifts.sum()
+    data['max_coin'] = gifts.max()
+    data['1000coin'] = (gifts >= 1000).sum()
+    data['100coin'] = (gifts >= 100).sum()
+    data['10coin'] = (gifts >= 10).sum()
+    data['0coin'] = len(gifts)
+    data['rate'] = data['livescore'] / data['total_gift']
+
+    # if xlim and data['total_gift'] > xlim:
+    #   continue
+
+    # ディレクトリ名をキーにする
+    path = Path(fname)
+    key = path.parent.name
+    if key not in ret:
+      ret[key] = []
+    ret[key].append(data)
+  return ret
+
 
 def is_excluded(total_gift, livescore):
   """跳ねていない"""

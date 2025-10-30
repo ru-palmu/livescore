@@ -7,15 +7,13 @@
 """
 
 import csv
-import json
 import sys
 import io
 import math
 import numpy as np
-from pathlib import Path
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
-from common import is_excluded, ru_model, ru_model_x
+from common import is_excluded, ru_model, ru_model_x, readJsons
 import re
 from typing import Callable
 
@@ -73,35 +71,6 @@ def limitedJsons(jsons: dict, xmin, xmax, y2min, y2max) -> dict:
         continue
       ret[dirname].append(data)
   print(f"#excluded by y2: {y2mind} .. {y2maxd}")
-  return ret
-
-
-def readJsons(fnames: list) -> dict:
-  ret = {}
-  for fname in fnames:
-    if not fname.endswith('.json'):
-      continue
-    with open(fname, 'r', encoding='utf-8') as f:
-      data = json.load(f)
-    data['filename'] = fname
-    data['livescore'] = int(data.get('livescore', 0))
-    if 'date' not in data:
-      # ファイル名から日付を取得する
-      path = Path(fname)
-      date_str = path.parent.name
-      data['date'] = date_str
-
-    gifts = np.array(data.get('gift', []))
-    data['total_gift'] = gifts.sum()
-    # if xlim and data['total_gift'] > xlim:
-    #   continue
-
-    # ディレクトリ名をキーにする
-    path = Path(fname)
-    key = path.parent.name
-    if key not in ret:
-      ret[key] = []
-    ret[key].append(data)
   return ret
 
 
@@ -200,41 +169,42 @@ def slice_dimension(dimension) -> Callable:
     return lambda d: not is_excluded(d['total_gift'], d['livescore'])
   elif not isinstance(dimension, str):
     raise Exception(f"invalid dimension type: {type(dimension)}")
-  elif re.fullmatch(r'20\d\d[01]\d[0-3]\d', dimension):
-    # 日付で区切る
-    return lambda d: d['date'] == dimension
-  elif re.fullmatch(r'>20\d\d[01]\d[0-3]\d', dimension):
-    date_limit = dimension[1:]
-    return lambda d: d['date'] > date_limit
-  elif re.fullmatch(r'>=20\d\d[01]\d[0-3]\d', dimension):
-    date_limit = dimension[2:]
-    return lambda d: d['date'] >= date_limit
+
+  op = "="
+  if dimension[0] in ('<', '>', '='):
+    op = dimension[0]
+    dimension = dimension[1:]
+  f = lambda d: True
+  if re.fullmatch(r'20\d\d[01]\d[0-3]\d', dimension):
+    key = 'date'
+    value = dimension[1:]
   elif re.fullmatch(r'score\d+', dimension):
-    score_limit = int(dimension[6:])
-    return lambda d: int(d.get('livescore', 0)) == score_limit
-  elif re.fullmatch(r'>score\d+', dimension):
-    score_limit = int(dimension[6:])
-    return lambda d: int(d.get('livescore', 0)) > score_limit
-  elif re.fullmatch(r'<score\d+', dimension):
-    score_limit = int(dimension[6:])
-    return lambda d: int(d.get('livescore', 0)) < score_limit
-  elif re.fullmatch(r'[><=]?20\d\d[01]\d[0-3]\d-\d+', dimension):
-    parts = dimension.split('-')
-    if len(parts) != 2:
-      date_limit = int(parts[0][1:])
-    else:
-      date_limit = int(parts[0])
-    rank_limit = int(parts[1])
-    if dimension[0] == '>':
-      return lambda d: (int(d['date']) == date_limit and
-                        d.get('rank', 0) > rank_limit)
-    elif dimension[0] == '<':
-      return lambda d: (int(d['date']) == date_limit and
-                        d.get('rank', 0) < rank_limit)
-    else:  # '='
-      return lambda d: (int(d['date']) == date_limit and
-                        d.get('rank', 0) == rank_limit)
-  raise Exception(f"invalid dimension: {dimension}")
+    key = 'livescore'
+    value = int(dimension[6:])
+  elif re.fullmatch(r'100(coin|gift)\d+', dimension):
+    key = '100coin'
+    value = int(dimension[7:])
+  elif re.fullmatch(r'100(coin|gift)\d+-\d+', dimension):
+    key = '0coin'
+    value = int(dimension.split('-')[1])
+    value2 = int(dimension.split('-')[0][7:])
+    f = lambda d: d['100coin'] == value2
+  elif re.fullmatch(r'20\d\d[01]\d[0-3]\d-\d+', dimension):
+    key = 'rank'
+    value = int(dimension.split('-')[1])
+    value2 = int(dimension.split('-')[0])
+    f = lambda d: int(d.get('date', 0)) == value2
+  else:
+    raise Exception(f"invalid dimension: {dimension}")
+
+  if op == "=":
+    return lambda d: (int(d.get(key, 0)) == value and f(d))
+  elif op == '>':
+    return lambda d: (int(d.get(key, 0)) > value and f(d))
+  elif op == '<':
+    return lambda d: (int(d.get(key, 0)) < value and f(d))
+  else:
+    raise Exception(f"invalid operator: {op}")
 
 
 def get_xyinvalid(xy: list) -> set:
@@ -407,6 +377,7 @@ def write_scatter(fname: str, jsons: dict,
     label = 'Real score / gift'
     if dimension:
       label += f' ({dimension})'
+    label += f' [{len(xvalid)}/{len(xy)}]'
 
     ax2.scatter(xvalid, y_livescore_per_gift, label=label,
                 color='#FFCC00', alpha=0.3, s=s, marker='o',
