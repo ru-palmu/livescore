@@ -6,7 +6,7 @@
 
 import json
 import numpy as np
-from common import is_excluded
+from common import is_excluded, readJsons
 # import os
 
 
@@ -56,6 +56,14 @@ def linfit(X, Y, aic=False):
   print()
 
 
+def dir2list(data: dict) -> list:
+  ret = []
+  for vlist in data.values():
+    for v in vlist:
+      ret.append(v)
+  return ret
+
+
 def main():
   import argparse
 
@@ -71,19 +79,17 @@ def main():
   xs = []
   ys = []
   n = [0] * 4
-  for fn in args.args:
-    if not fn.endswith('.json'):
-      continue
 
-    with open(fn, 'r') as f:
-      data = json.load(f)
+  jsons = readJsons(args.args)
+
+  for data in dir2list(jsons):
 
     gift = np.array(data['gift'])
-    gift_sum = gift.sum()
+    gift_sum = data['total_gift']
     if not (args.xmin <= gift_sum <= args.xmax):
       continue
 
-    livescore = int(data['livescore'])
+    livescore = data['livescore']
     if args.exclude and is_excluded(gift_sum, livescore):
       continue
 
