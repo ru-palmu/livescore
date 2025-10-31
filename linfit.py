@@ -6,7 +6,7 @@
 
 import json
 import numpy as np
-from common import is_excluded, readJsons
+from common import is_excluded, readJsons, limitedJsons
 # import os
 
 
@@ -81,13 +81,12 @@ def main():
   n = [0] * 4
 
   jsons = readJsons(args.args)
+  jsons = limitedJsons(jsons, args.xmin, args.xmax, None, None)
 
   for data in dir2list(jsons):
 
     gift = np.array(data['gift'])
     gift_sum = data['total_gift']
-    if not (args.xmin <= gift_sum <= args.xmax):
-      continue
 
     livescore = data['livescore']
     if args.exclude and is_excluded(gift_sum, livescore):

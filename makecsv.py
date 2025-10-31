@@ -13,9 +13,13 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
-from common import is_excluded, ru_model, ru_model_x, readJsons
+from common import is_excluded, ru_model, ru_model_x, readJsons, limitedJsons
+from common import set_ru_model
 import re
 from typing import Callable
+
+plt.switch_backend('Agg')
+plt.rcParams["font.family"] = "Noto Sans CJK JP"
 
 
 def comma_formatter(x, pos):
@@ -48,30 +52,6 @@ def row_append_float(row, v: float, m: int = 1):
     row.append(int(v))
   else:
     raise Exception(f"invalid m: {m}")
-
-
-def limitedJsons(jsons: dict, xmin, xmax, y2min, y2max) -> dict:
-  ret = {}
-  y2mind = y2min
-  y2maxd = y2max
-  for dirname, json_list in jsons.items():
-    for data in json_list:
-      if xmin is not None and data['total_gift'] < xmin:
-        continue
-      elif xmax is not None and data['total_gift'] > xmax:
-        continue
-      if dirname not in ret:
-        ret[dirname] = []
-      v = data['livescore'] / data['total_gift']
-      if v > y2max:
-        y2maxd = max(y2maxd, v)
-        continue
-      if v < y2min:
-        y2mind = min(y2mind, v)
-        continue
-      ret[dirname].append(data)
-  print(f"#excluded by y2: {y2mind} .. {y2maxd}")
-  return ret
 
 
 def write_csv_file(fp, jsons: dict):
@@ -313,6 +293,7 @@ def plot_rank_zones(ax2, xlim, ymin: float, zorder=0):
 def write_scatter(fname: str, jsons: dict,
                   plot_livescore: bool = True,
                   plot_rate: bool = True,
+                  plot_model: bool = True,
                   xlim=None, ylim=None, title: str = '',
                   ymin: float = 2.4, ymax: float = 3.5,
                   dimension=None):
@@ -377,7 +358,10 @@ def write_scatter(fname: str, jsons: dict,
     label = 'Real score / gift'
     if dimension:
       label += f' ({dimension})'
-    label += f' [{len(xvalid)}/{len(xy)}]'
+    if len(xvalid) != len(xy):
+      label += f' [{len(xvalid)}/{len(xy)}]'
+    else:
+      label += f' [{len(xy)} samples]'
 
     ax2.scatter(xvalid, y_livescore_per_gift, label=label,
                 color='#FFCC00', alpha=0.3, s=s, marker='o',
@@ -390,7 +374,7 @@ def write_scatter(fname: str, jsons: dict,
   x = [v[0] for v in xy]
   xmin = 0
   xmax = x[-1] * 1.1
-  if plot_livescore:
+  if plot_livescore and plot_model:
     # 左軸：gift - livescore のモデル線を描画する
 
     # 旧モデル (３倍）
@@ -407,7 +391,7 @@ def write_scatter(fname: str, jsons: dict,
              color='#2ca02c',
              zorder=3, alpha=0.3)
 
-  if plot_rate:
+  if plot_rate and plot_model:
     # 右軸：livescore / gift のモデル線を描画する
     x_r = ru_model_x(xmin, xmax)
     y = [ru_model(v) / v for v in x_r]
@@ -472,9 +456,14 @@ def main():
                       help="do not plot live score")
   parser.add_argument('--no-rate', action='store_true',
                       help="do not plot live score / gift rate")
+  parser.add_argument('--no-model', action='store_true',
+                      help="do not plot model")
+  parser.add_argument('--ru-model', type=int, choices=[0, 1],
+                      default=0)
 
   args = parser.parse_args()
 
+  set_ru_model(args.ru_model)
   if args.f:
     fp = open(args.f, 'w', encoding=args.enc, newline='')
   else:
@@ -500,6 +489,7 @@ def main():
     write_scatter(args.scatter, jsons,
                   plot_livescore=not args.no_livescore,
                   plot_rate=not args.no_rate,
+                  plot_model=not args.no_model,
                   xlim=args.xlim, ylim=args.ylim,
                   ymin=args.ymin, ymax=args.ymax,
                   title=args.title if args.title else '',
