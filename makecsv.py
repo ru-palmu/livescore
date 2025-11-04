@@ -151,10 +151,10 @@ def slice_dimension(dimension) -> Callable:
   ctype = int
   if re.fullmatch(r'20\d\d[01]\d[0-3]\d', dimension):
     key = 'date'
-    value = dimension[1:]
+    value = int(dimension)
   elif re.fullmatch(r'score\d+', dimension):
     key = 'livescore'
-    value = int(dimension[6:])
+    value = int(dimension[5:])
   elif re.fullmatch(r'100(coin|gift)\d+', dimension):
     key = '100coin'
     value = int(dimension[7:])
@@ -411,7 +411,7 @@ def write_scatter(fname: str, jsons: dict,
 
   ax2.set_ylim(ymin, ymax)
 
-  yticks = np.arange(1.8, 4, 0.2)
+  yticks = np.arange(0.8, 4, 0.2)
   ax2.set_yticks([v for v in yticks if ymin < v < ymax])
 
   ax1.set_zorder(2)

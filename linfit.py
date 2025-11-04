@@ -81,6 +81,7 @@ def main():
   parser.add_argument('args', nargs='+')
   parser.add_argument('--xmin', default=0, type=int)
   parser.add_argument('--xmax', default=100000000, type=int)
+  parser.add_argument('-n', default=1000, type=int)
   parser.add_argument('--exclude', action='store_true',
                       help='exclude some data according to is_excluded()')
   parser.add_argument('--origin', action='store_true')
@@ -136,7 +137,9 @@ def main():
   xs = np.array(xs, dtype=np.float64)
   ys = np.array(ys, dtype=np.float64)
 
-  print("@@  #data=", len(ys))
+  n = n[:args.n]
+
+  print("@@  #data=", len(ys), "#n=", len(n))
   for i in range(len(n)):
     xx = xs[:, :n[i]]
     linfit(xx, ys, aic=True, origin=args.origin)

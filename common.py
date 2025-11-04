@@ -67,6 +67,7 @@ def _readJsons(fnames: list, ret: dict) -> dict:
     data['10coin'] = (gifts >= 10).sum()
     data['0coin'] = len(gifts)
     data['rate'] = data['livescore'] / data['total_gift']
+    assert data['rate'] > 1.6, data
 
     # if xlim and data['total_gift'] > xlim:
     #   continue
@@ -106,7 +107,7 @@ def set_ru_model(idx: int):
                   [3.30641361e+04, 2.56655640e+00],  # 170k..     54samples
                   ]
   else:
-    print("default model (2025-09-28 ..")
+    print("default model (2025-09-28 ..)")
     __RU_MODEL = [(0, 3),
                   (17299.15066, 2.675280793)]
 
