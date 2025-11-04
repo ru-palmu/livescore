@@ -4,7 +4,6 @@
 """
 """
 
-import json
 import numpy as np
 from common import is_excluded, readJsons, limitedJsons
 # import os
@@ -29,13 +28,24 @@ def vif(X):
   return np.array(vifs)
 
 
-def linfit(X, Y, aic=False):
+def linfit_origin(X, Y):
+  """原点を通る直線フィッティング"""
+  Xt = X.T
+  a = np.linalg.inv(Xt @ X) @ Xt @ Y
+  return [0] + list(a)
+
+
+def linfit(X, Y, aic=False, origin=False):
   if len(X) != len(Y):
     raise ValueError("len(X) != len(Y): {} != {}".format(len(X), len(Y)))
   if (len(X) == 0):
     print("X is empty")
     return
-  a = np.linalg.lstsq(X, Y, rcond=-1)
+  if origin:
+    # 原点を通る直線フィッティング
+    a = [linfit_origin(X[:, 1:], Y)]
+  else:
+    a = np.linalg.lstsq(X, Y, rcond=-1)
   y_pred = []
   for i in range(len(Y)):
     y_pred.append(np.dot(a[0], X[i]))
@@ -71,7 +81,9 @@ def main():
   parser.add_argument('args', nargs='+')
   parser.add_argument('--xmin', default=0, type=int)
   parser.add_argument('--xmax', default=100000000, type=int)
-  parser.add_argument('--exclude', action='store_true')
+  parser.add_argument('--exclude', action='store_true',
+                      help='exclude some data according to is_excluded()')
+  parser.add_argument('--origin', action='store_true')
   # parser.add_argument('-f', required=True)
   # parser.add_argument('-f', required=True)
   args = parser.parse_args()
@@ -81,6 +93,7 @@ def main():
   n = [0] * 4
 
   jsons = readJsons(args.args)
+  print("limit: xmin =", args.xmin, ", xmax =", args.xmax)
   jsons = limitedJsons(jsons, args.xmin, args.xmax, None, None)
 
   for data in dir2list(jsons):
@@ -126,7 +139,7 @@ def main():
   print("@@  #data=", len(ys))
   for i in range(len(n)):
     xx = xs[:, :n[i]]
-    linfit(xx, ys, aic=True)
+    linfit(xx, ys, aic=True, origin=args.origin)
 
   print("  - aic: 小さいほど良い. 比較に使う")
   print("  - vif: 小さいほど良い. 5より大きいパラメータは多重共線性の疑いあり")

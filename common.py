@@ -7,6 +7,7 @@
 from pathlib import Path
 import json
 import numpy as np
+import re
 
 
 def limitedJsons(jsons: dict, xmin, xmax, y2min, y2max) -> dict:
@@ -46,7 +47,7 @@ def _readJsons(fnames: list, ret: dict) -> dict:
       continue
     if not Path(fname).is_file():
       continue
-    if not fname.endswith('.json'):
+    if not re.fullmatch(r'[0-9]+-[0-9]+\.json', Path(fname).name):
       continue
     with open(fname, 'r', encoding='utf-8') as f:
       data = json.load(f)
@@ -95,12 +96,27 @@ def set_ru_model(idx: int):
   elif idx == 2:
     # 70k, 180k で分ける
     __RU_MODEL = [(0, 3),
-                  [1.74743010e+04, 2.67966743e+00],  # 70k..180k 232samples
-                  [4.08872106e+04, 2.54960537e+00],  # 180k..     54samples
+                  [1.27422658e+04, 2.72072633e+00],  # 70k..180k 232samples
+                  [3.64881326e+04, 2.56295056e+00],  # 180k..     54samples
+                  ]
+  elif idx == 3:
+    # 70k, 180k で分ける
+    __RU_MODEL = [(0, 3),
+                  [1.44607668e+04, 2.70857686e+00],  # 50k..160k 232samples
+                  [3.30641361e+04, 2.56655640e+00],  # 170k..     54samples
                   ]
   else:
+    print("default model (2025-09-28 ..")
     __RU_MODEL = [(0, 3),
                   (17299.15066, 2.675280793)]
+
+  # 交点を計算する
+  for i in range(len(__RU_MODEL) - 1):
+    b1, a1 = __RU_MODEL[i]
+    b2, a2 = __RU_MODEL[i + 1]
+    x = (b2 - b1) / (a1 - a2)
+    y = a1 * x + b1
+    print(f"ru_model seg {i}: P({x:9.2f}, {y:9.2f})  F(a={a2}, b={b2})")
 
 
 def ru_model_x(xmin, xmax) -> list:
@@ -119,6 +135,25 @@ def ru_model_x(xmin, xmax) -> list:
 
 def ru_model(total_gift: int) -> float:
   return min([total_gift * k[1] + k[0] for k in __RU_MODEL])
+
+
+def comma_formatter(x, pos):
+  if x < 10000:
+    return f"{int(x):,}"
+  elif x < 1_000_000:  # K 表示
+    suffix = 'K'
+    value = x / 1000
+  else:
+    suffix = 'M'
+    value = x / 1_000_000
+
+  if value > 100:
+    value_str = f"{int(value)}"
+  elif value > 10:
+    value_str = f"{value:.1f}".rstrip('0').rstrip('.')
+  else:
+    value_str = f"{value:.2f}".rstrip('0').rstrip('.')
+  return f"{value_str}{suffix}"
 
 
 # vim:set et ts=2 sts=2 sw=2 tw=80:

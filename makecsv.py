@@ -10,35 +10,17 @@ import csv
 import sys
 import io
 import math
+import operator
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
 from common import is_excluded, ru_model, ru_model_x, readJsons, limitedJsons
-from common import set_ru_model
+from common import set_ru_model, comma_formatter
 import re
 from typing import Callable
 
 plt.switch_backend('Agg')
 plt.rcParams["font.family"] = "Noto Sans CJK JP"
-
-
-def comma_formatter(x, pos):
-  if x < 10000:
-    return f"{int(x):,}"
-  elif x < 1_000_000:  # K 表示
-    suffix = 'K'
-    value = x / 1000
-  else:
-    suffix = 'M'
-    value = x / 1_000_000
-
-  if value > 100:
-    value_str = f"{int(value)}"
-  elif value > 10:
-    value_str = f"{value:.1f}".rstrip('0').rstrip('.')
-  else:
-    value_str = f"{value:.2f}".rstrip('0').rstrip('.')
-  return f"{value_str}{suffix}"
 
 
 def row_append_float(row, v: float, m: int = 1):
@@ -137,10 +119,23 @@ def get_sorted_xy(jsons: dict, slicer: Callable) -> list:
   return xy
 
 
+def _get_operator(dimension: str):
+  compares = {'<': operator.lt,
+              '>': operator.gt,
+              '=': operator.eq}
+  if dimension[0] not in compares:
+    return operator.eq, dimension
+  return compares[dimension[0]], dimension[1:]
+
+
 def slice_dimension(dimension) -> Callable:
   """はねていないデータ群
 
   returns func(json_data) -> bool
+
+  >>> f = slice_dimension("rankS")
+  >>> f({'user_rank': 'S'})
+  True
   """
 
   if not dimension:
@@ -150,11 +145,10 @@ def slice_dimension(dimension) -> Callable:
   elif not isinstance(dimension, str):
     raise Exception(f"invalid dimension type: {type(dimension)}")
 
-  op = "="
-  if dimension[0] in ('<', '>', '='):
-    op = dimension[0]
-    dimension = dimension[1:]
+  compare, dimension = _get_operator(dimension)
+
   f = lambda d: True
+  ctype = int
   if re.fullmatch(r'20\d\d[01]\d[0-3]\d', dimension):
     key = 'date'
     value = dimension[1:]
@@ -164,8 +158,11 @@ def slice_dimension(dimension) -> Callable:
   elif re.fullmatch(r'100(coin|gift)\d+', dimension):
     key = '100coin'
     value = int(dimension[7:])
+  elif re.fullmatch(r'10(coin|gift)\d+', dimension):
+    key = '10coin'
+    value = int(dimension[6:])
   elif re.fullmatch(r'100(coin|gift)\d+-\d+', dimension):
-    key = '0coin'
+    key = '10coin'
     value = int(dimension.split('-')[1])
     value2 = int(dimension.split('-')[0][7:])
     f = lambda d: d['100coin'] == value2
@@ -174,17 +171,14 @@ def slice_dimension(dimension) -> Callable:
     value = int(dimension.split('-')[1])
     value2 = int(dimension.split('-')[0])
     f = lambda d: int(d.get('date', 0)) == value2
+  elif re.fullmatch(r'rank[ABCDS][12345S]?', dimension):
+    ctype = str
+    key = 'user_rank'
+    value = dimension[4:]
   else:
     raise Exception(f"invalid dimension: {dimension}")
 
-  if op == "=":
-    return lambda d: (int(d.get(key, 0)) == value and f(d))
-  elif op == '>':
-    return lambda d: (int(d.get(key, 0)) > value and f(d))
-  elif op == '<':
-    return lambda d: (int(d.get(key, 0)) < value and f(d))
-  else:
-    raise Exception(f"invalid operator: {op}")
+  return lambda d: (compare(ctype(d.get(key, 0)), value) and f(d))
 
 
 def get_xyinvalid(xy: list) -> set:
@@ -216,6 +210,7 @@ def set_xylim_ax1(ax1, xlim, ylim):
     ax1.set_ylim(0, ylim)
   else:
     ax1.set_ylim(0, None)
+  return ylim
 
 
 def plot_rank_zones(ax2, xlim, ymin: float, zorder=0):
@@ -294,6 +289,7 @@ def write_scatter(fname: str, jsons: dict,
                   plot_livescore: bool = True,
                   plot_rate: bool = True,
                   plot_model: bool = True,
+                  plot_3xmodel: bool = True,
                   xlim=None, ylim=None, title: str = '',
                   ymin: float = 2.4, ymax: float = 3.5,
                   dimension=None):
@@ -374,7 +370,7 @@ def write_scatter(fname: str, jsons: dict,
   x = [v[0] for v in xy]
   xmin = 0
   xmax = x[-1] * 1.1
-  if plot_livescore and plot_model:
+  if plot_livescore and plot_3xmodel:
     # 左軸：gift - livescore のモデル線を描画する
 
     # 旧モデル (３倍）
@@ -384,6 +380,7 @@ def write_scatter(fname: str, jsons: dict,
              color='#d62728', linestyle='dashed',
              zorder=3, alpha=0.3)
 
+  if plot_livescore and plot_model:
     # 新モデル
     x_r = ru_model_x(xmin, xmax)
     y = [ru_model(v) for v in x_r]
@@ -423,8 +420,17 @@ def write_scatter(fname: str, jsons: dict,
 
   ax1.set_title(title)
   fig.legend(loc='upper center', bbox_to_anchor=(0.5, 0.93), ncol=1)
-  ax1.grid(False)
-  ax2.grid(True)
+
+  if not plot_rate:
+    plt.draw()  # 自動スケーリング
+
+    x_ticks = ax1.get_xticks()
+    y_ticks = 3 * x_ticks
+    ax1.set_yticks(y_ticks)
+    ax1.grid(True, color='#DDDDDD', linestyle='-', alpha=0.3)
+
+  ax1.grid(not plot_rate)
+  ax2.grid(plot_rate)
   fig.tight_layout()
   fig.savefig(fname)
   plt.close(fig)
@@ -458,10 +464,18 @@ def main():
                       help="do not plot live score / gift rate")
   parser.add_argument('--no-model', action='store_true',
                       help="do not plot model")
-  parser.add_argument('--ru-model', type=int, choices=[0, 1],
+  parser.add_argument('--no-3x', action='store_true',
+                      help="do not plot 3x gift model")
+  parser.add_argument('--ru-model', type=int, choices=[0, 1, 2, 3],
                       default=0)
+  parser.add_argument('--doctest', action='store_true')
 
   args = parser.parse_args()
+
+  if args.doctest:
+    import doctest
+    doctest.testmod()
+    return 0
 
   set_ru_model(args.ru_model)
   if args.f:
@@ -490,6 +504,7 @@ def main():
                   plot_livescore=not args.no_livescore,
                   plot_rate=not args.no_rate,
                   plot_model=not args.no_model,
+                  plot_3xmodel=not args.no_3x,
                   xlim=args.xlim, ylim=args.ylim,
                   ymin=args.ymin, ymax=args.ymax,
                   title=args.title if args.title else '',
