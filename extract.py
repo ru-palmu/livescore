@@ -6,6 +6,7 @@
 
 from common import readJsons
 import re
+import operator
 
 
 def is_target(data: dict, conds: list) -> bool:
@@ -13,17 +14,8 @@ def is_target(data: dict, conds: list) -> bool:
     key, op, value = cond
     if key not in data:
       return False
-    if op == '<':
-      if not data[key] < value:
-        return False
-    elif op == '=':
-      if not data[key] == value:
-        return False
-    elif op == '>':
-      if not data[key] > value:
-        return False
-    else:
-      raise ValueError(f'Invalid operator: {op}')
+    if not op(data[key], value):
+      return False
   return True
 
 
@@ -39,15 +31,45 @@ def print_data(data: dict, keys: list):
 
 
 def parse_cond(cond: str) -> list:
-  # <, =, > のいずれかで分割する
-  m = re.match(r'^(.*?)([<=>]+)(.*)$', cond)
+  """ <, =, > のいずれかで分割する
+
+  >>> a = parse_cond('rank>1000')
+  >>> a[0] == "rank"
+  True
+  >>> a[1](1500, 1000)
+  True
+  >>> a[1](500, 1000)
+  False
+  >>> a[2] == 1000
+  True
+  >>> a = parse_cond('  rank   < 1000  ')
+  >>> a[0] == "rank"
+  True
+  >>> a[1](1500, 1000)
+  False
+  >>> a[1](500, 1000)
+  True
+  >>> a[2] == 1000
+  True
+  """
+  m = re.fullmatch(r'\s*(\S+)\s*([<=>]+)\s*(\S+)\s*', cond)
   if not m:
     raise ValueError(f'Invalid condition: {cond}')
   key, op, value = m.groups()
+  compares = {'<': operator.lt,
+              '>': operator.gt,
+              '=': operator.eq}
+  if op not in compares:
+    raise ValueError(f'Invalid operator: {op}')
   if re.fullmatch(r'\d+', value):
-    return [key, op, int(value)]
+    value = int(value)
   else:
-    return [key, op, float(value)]
+    value = float(value)
+
+  if key in ["gift"]:
+    key = 'total_gift'
+
+  return [key, compares[op], value]
 
 
 def main():
@@ -55,10 +77,21 @@ def main():
 
   parser = argparse.ArgumentParser(description='')
   parser.add_argument('args', nargs='+')
-  parser.add_argument('--cond', action='append')
-  parser.add_argument('--key', action='append')
+  parser.add_argument('--cond', action='append',
+                      help='絞り込み条件を追加する. "key op cond" 形式.'
+                      ' e.g., --cond rank>1000')
+  parser.add_argument('--key', action='append',
+                      help='SELECT 文の列を追加する.'
+                      ' e.g, --key date --key rank')
   parser.add_argument('--order', default="livescore")
+  parser.add_argument('--doctest', action='store_true',
+                      help='Run doctest and exit.')
   args = parser.parse_args()
+
+  if args.doctest:
+    import doctest
+    doctest.testmod()
+    return
 
   if args.key is None:
     args.key = ['date', 'rank', 'date', 'user_rank',
@@ -70,7 +103,6 @@ def main():
   conds = [parse_cond(c) for c in args.cond or []]
 
   print(','.join(args.key))
-
 
   ret = []
   for data_list in jsons.values():

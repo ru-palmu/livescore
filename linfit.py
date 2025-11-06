@@ -5,7 +5,8 @@
 """
 
 import numpy as np
-from common import is_excluded, readJsons, limitedJsons
+from common import is_excluded, readJsons, limitedJsons, comma_formatter
+import datetime
 # import os
 
 
@@ -64,6 +65,53 @@ def linfit(X, Y, aic=False, origin=False):
     print("aic =", aic)  # 小さいほど良い
     print("vif =", _vif)  # 小さいほど良い
   print()
+  return a, r2
+
+
+def seprat(g_jsons, sep):
+  ret = []
+  for i in range(len(sep) - 1):
+    jsons = limitedJsons(g_jsons, sep[i], sep[i + 1], None, None)
+
+    x = []
+    y = []
+    for data in dir2list(jsons):
+      gift_sum = data['total_gift']
+      livescore = data['livescore']
+
+      if i != 0 and is_excluded(gift_sum, livescore):
+        continue
+
+      y.append(livescore)
+      x.append([1, gift_sum])
+
+    assert len(x) > 0, ["no data for range", sep[i], "~", sep[i + 1]]
+    print("Range:", sep[i], "~", sep[i + 1], " #data", len(x))
+
+    x = np.array(x)
+    y = np.array(y)
+    a, r2 = linfit(x, y, aic=False, origin=(i == 0))
+    ret.append([a, sep[i], sep[i+1], len(x)])
+
+  ret[0][0][0][1] = 3
+  # 今日の日付
+  today = datetime.date.today().strftime('%Y-%m-%d')
+  print(f"    # separator {sep[1:-1]} {today}")
+  print("__RU_MODEL = [")
+  for i, rr in enumerate(ret):
+    r = rr[0][0]
+    lh = comma_formatter(rr[1], 0)
+    uh = comma_formatter(rr[2], 0)
+
+    if i > 0:
+      b1, a1 = ret[i - 1][0][0]
+      b2, a2 = ret[i - 0][0][0]
+      x = (b2 - b1) / (a1 - a2)
+    else:
+      x = 0
+
+    print(f'({r[0]}, {r[1]}),  # {lh}..{uh}  {rr[3]} samples, {x}')
+  print("]")
 
 
 def dir2list(data: dict) -> list:
@@ -81,6 +129,7 @@ def main():
   parser.add_argument('args', nargs='+')
   parser.add_argument('--xmin', default=0, type=int)
   parser.add_argument('--xmax', default=100000000, type=int)
+  parser.add_argument('-s', type=int, action='append')
   parser.add_argument('-n', default=1000, type=int)
   parser.add_argument('--exclude', action='store_true',
                       help='exclude some data according to is_excluded()')
@@ -95,6 +144,11 @@ def main():
 
   jsons = readJsons(args.args)
   print("limit: xmin =", args.xmin, ", xmax =", args.xmax)
+
+  if args.s:
+    seprat(jsons, [0] + args.s + [100000000])
+    return 0
+
   jsons = limitedJsons(jsons, args.xmin, args.xmax, None, None)
 
   for data in dir2list(jsons):

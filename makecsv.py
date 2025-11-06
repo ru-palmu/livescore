@@ -197,13 +197,22 @@ def get_xyinvalid(xy: list) -> set:
   return xinvalid
 
 
+def get_ylim_ax1(xlim):
+  if xlim < 200_00:
+    ylim = 3 * xlim
+  elif xlim < 300_00:
+    ylim = 2.9 * xlim
+  else:
+    ylim = 2.8 * xlim
+
+
 def set_xylim_ax1(ax1, xlim, ylim):
   """左軸の x/y 軸範囲を設定する。
   """
   if xlim:
     ax1.set_xlim(0, xlim)
     if not ylim:
-      ylim = 3 * xlim
+      ylim = get_ylim_ax1(xlim)
   else:
     ax1.set_xlim(0, None)
   if ylim:
@@ -369,7 +378,7 @@ def write_scatter(fname: str, jsons: dict,
   # ==================================
   x = [v[0] for v in xy]
   xmin = 0
-  xmax = x[-1] * 1.1
+  xmax = x[-1] * 1.05
   if plot_livescore and plot_3xmodel:
     # 左軸：gift - livescore のモデル線を描画する
 
@@ -405,7 +414,7 @@ def write_scatter(fname: str, jsons: dict,
   # ==================================
   # ランク帯塗りつぶし
   # ==================================
-  set_xylim_ax1(ax1, xlim, ylim)
+  set_xylim_ax1(ax1, xlim or xmax, ylim)
   xlim2 = xlim if xlim else xmax
   plot_rank_zones(ax2, xlim2, ymin, zorder=1)
 

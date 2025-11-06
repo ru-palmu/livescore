@@ -14,14 +14,13 @@ def limitedJsons(jsons: dict, xmin, xmax, y2min, y2max) -> dict:
   ret = {}
   y2mind = y2min
   y2maxd = y2max
+  n = 0
   for dirname, json_list in jsons.items():
     for data in json_list:
       if xmin is not None and data['total_gift'] < xmin:
         continue
       elif xmax is not None and data['total_gift'] > xmax:
         continue
-      if dirname not in ret:
-        ret[dirname] = []
       v = data['livescore'] / data['total_gift']
       if y2max is not None and v > y2max:
         y2maxd = max(y2maxd, v)
@@ -29,8 +28,11 @@ def limitedJsons(jsons: dict, xmin, xmax, y2min, y2max) -> dict:
       if y2min is not None and v < y2min:
         y2mind = min(y2mind, v)
         continue
+      if dirname not in ret:
+        ret[dirname] = []
       ret[dirname].append(data)
-  print(f"#excluded by y2: {y2mind} .. {y2maxd}")
+      n += 1
+  print(f"excluded by y2: {y2mind} .. {y2maxd}, #={n}")
   return ret
 
 
@@ -89,18 +91,25 @@ def is_excluded(total_gift, livescore):
 def set_ru_model(idx: int):
   global __RU_MODEL
   if idx == 1:
-    # 70k, 200k で分ける
-    __RU_MODEL = [(0, 3),
-                  [1.76776625e+04, 2.67770487e+00],  # 70k..200k 236samples
-                  [4.10767576e+04, 2.54909051e+00],  # 200k..     50samples
-                  ]
-  elif idx == 2:
     # 70k, 180k で分ける
     __RU_MODEL = [(0, 3),
                   [1.27422658e+04, 2.72072633e+00],  # 70k..180k 232samples
                   [3.64881326e+04, 2.56295056e+00],  # 180k..     54samples
                   ]
+  elif idx == 2:
+    __RU_MODEL = [
+      (0, 3.0703756957966846),  # 0..40K  1584 samples, 0
+      (14300.294740833893, 2.7051164826393332),  # 40K..180K  781 samples, 39151.08565563661
+      (41869.0336828489, 2.5484609906700233),  # 180K..100M  78 samples, 175983.22660412022
+    ]
   elif idx == 3:
+    # separator [50000, 180000] 2025-11-06
+    __RU_MODEL = [
+      (0, 3),  # 0..50K  1814 samples, 0
+      (15531.441501008434, 2.6950897058012684),  # 50K..180K  671 samples, 50937.74069459752
+      (41958.68833499996, 2.5483011271896387),  # 180K..100M  79 samples, 180036.12463550194
+    ]
+  elif idx == 4:
     # 70k, 180k で分ける
     __RU_MODEL = [(0, 3),
                   [1.44607668e+04, 2.70857686e+00],  # 50k..160k 232samples
