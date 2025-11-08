@@ -93,9 +93,10 @@ def seprat(g_jsons, sep):
     a, r2 = linfit(x, y, aic=False, origin=(i == 0))
     ret.append([a, sep[i], sep[i+1], len(x)])
 
-  ret[0][0][0][1] = 3
+  # ret[0][0][0][1] = 3
   # 今日の日付
   today = datetime.date.today().strftime('%Y-%m-%d')
+  print("#  common.py")
   print(f"    # separator {sep[1:-1]} {today}")
   print("__RU_MODEL = [")
   for i, rr in enumerate(ret):
@@ -112,6 +113,16 @@ def seprat(g_jsons, sep):
 
     print(f'({r[0]}, {r[1]}),  # {lh}..{uh}  {rr[3]} samples, {x}')
   print("]")
+
+  print()
+  print("// js/navi.js # score2coin_orig()")
+  for i, rr in enumerate(ret):
+    r = rr[0][0]
+    print(f"    const a{i} = {r[1]};")
+    print(f"    const b{i} = {r[0]};")
+  print("    const model = [", end="")
+  print(", ".join([f"[b{i}, a{i}]" for i in range(len(ret))]), end="")
+  print("];")
 
 
 def dir2list(data: dict) -> list:
