@@ -52,13 +52,20 @@ def parse_cond(cond: str) -> list:
   >>> a[2] == 1000
   True
   """
-  m = re.fullmatch(r'\s*(\S+)\s*([<=>]+)\s*(\S+)\s*', cond)
+  m = re.fullmatch(r'\s*(\S+)\s*(=~|[<=>]|>=|<=)\s*(\S+)\s*', cond)
   if not m:
     raise ValueError(f'Invalid condition: {cond}')
   key, op, value = m.groups()
+  print([key, op, value])
   compares = {'<': operator.lt,
               '>': operator.gt,
+              '>=': operator.ge,
+              '<=': operator.le,
               '=': operator.eq}
+  if op == '=~':
+    # 正規表現マッチ
+    return [key, lambda a, b: re.search(b, a) is not None, value]
+
   if op not in compares:
     raise ValueError(f'Invalid operator: {op}')
   if re.fullmatch(r'\d+', value):

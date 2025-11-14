@@ -8,7 +8,6 @@
 
 import csv
 import sys
-import io
 import math
 import operator
 import numpy as np
@@ -120,6 +119,10 @@ def get_sorted_xy(jsons: dict, slicer: Callable) -> list:
 
 
 def _get_operator(dimension: str):
+  if dimension.startswith('<='):
+    return operator.le, dimension[2:]
+  elif dimension.startswith('>='):
+    return operator.ge, dimension[2:]
   compares = {'<': operator.lt,
               '>': operator.gt,
               '=': operator.eq}
@@ -128,7 +131,14 @@ def _get_operator(dimension: str):
   return compares[dimension[0]], dimension[1:]
 
 
-def slice_dimension(dimension) -> Callable:
+def slice_dimensions(dimensions: list) -> Callable:
+  if len(dimensions) == 0:
+    return lambda d: True
+  funcs = [slice_dimension(dim) for dim in dimensions]
+  return lambda d: all(f(d) for f in funcs)
+
+
+def slice_dimension(dimension: str) -> Callable:
   """はねていないデータ群
 
   returns func(json_data) -> bool
@@ -155,12 +165,10 @@ def slice_dimension(dimension) -> Callable:
   elif re.fullmatch(r'score\d+', dimension):
     key = 'livescore'
     value = int(dimension[5:])
-  elif re.fullmatch(r'100(coin|gift)\d+', dimension):
-    key = '100coin'
-    value = int(dimension[7:])
-  elif re.fullmatch(r'10(coin|gift)\d+', dimension):
-    key = '10coin'
-    value = int(dimension[6:])
+  elif re.fullmatch(r'\d+(coin|gift)\d+', dimension):
+    m = re.fullmatch(r'(\d+)(coin|gift)(\d+)', dimension)
+    key = f'{m.group(1)}coin'
+    value = int(m.group(3))
   elif re.fullmatch(r'100(coin|gift)\d+-\d+', dimension):
     key = '10coin'
     value = int(dimension.split('-')[1])
@@ -301,7 +309,7 @@ def write_scatter(fname: str, jsons: dict,
                   plot_3xmodel: bool = True,
                   xlim=None, ylim=None, title: str = '',
                   ymin: float = 2.4, ymax: float = 3.5,
-                  dimension=None):
+                  dimensions=[]):
 
   fig, ax1 = plt.subplots()
 
@@ -315,7 +323,7 @@ def write_scatter(fname: str, jsons: dict,
   ax1.set_ylabel('Live Score')
   ax2.set_ylabel('Live Score / Gift')
 
-  slicer = slice_dimension(dimension)
+  slicer = slice_dimensions(dimensions)
   xy = get_sorted_xy(jsons, slicer)
   assert len(xy) > 0
 
@@ -361,8 +369,8 @@ def write_scatter(fname: str, jsons: dict,
     # 右軸：livescore / gift の散布図を描画する
     y_livescore_per_gift = [v[1] / v[0] for v in xy if v[3]]
     label = 'Real score / gift'
-    if dimension:
-      label += f' ({dimension})'
+    if dimensions and len(dimensions) > 0:
+      label += f' ({",".join(dimensions)})'
     if len(xvalid) != len(xy):
       label += f' [{len(xvalid)}/{len(xy)}]'
     else:
@@ -372,6 +380,31 @@ def write_scatter(fname: str, jsons: dict,
                 color='#FFCC00', alpha=0.3, s=s, marker='o',
                 edgecolors=edgecolors, linewidths=linewidths,
                 zorder=10)
+
+  if False:
+    # 薄紫色の補助線
+    ax2.plot([0, 150_000, 300_000], [3.05, 2.4, 1.75], color='#800080',
+             linestyle='dashed',
+             zorder=9, alpha=0.6)
+    ax2.plot([0, 300_000], [2.7, 1.6], color='#800080',
+             linestyle='dashed',
+             zorder=9, alpha=0.6)
+
+    xxx = np.arange(1, 600_000)
+    a0 = 2.9802304278833347
+    b0 = 1840.1205947642793
+    a1 = 2.6979201600185783
+    b1 = 15427.80639995219
+    a2 = 2.5422015819310215
+    b2 = 43967.846779877815
+
+    fnc = lambda x: min([a0 * x + b0,
+                         a1 * x + b1,
+                         a2 * x + b2])
+    yyy = [fnc(x) for x in xxx]
+    ax2.plot(xxx, yyy / xxx, color='#800080',
+             linestyle='dashed',
+             zorder=50, alpha=0.6)
 
   # ==================================
   # モデル線
@@ -445,15 +478,16 @@ def write_scatter(fname: str, jsons: dict,
   plt.close(fig)
 
 
-def main():
+def main() -> int:
   import argparse
 
   parser = argparse.ArgumentParser(description='')
   parser.add_argument('args', nargs='+', help="input json files")
-  parser.add_argument('-f', help="output csv file; default STDOUT")
+  parser.add_argument('-f', help="output csv file; default /dev/null",
+                      default="/dev/null")
   parser.add_argument('--scatter', help="output scatter.png file")
   parser.add_argument('--dimension', help="dimension to slice",
-                      default="", type=str)
+                      default=[], action='append')
   parser.add_argument('-x', '--xlim', type=int,
                       help="Maximum value for the x-axis limit")
   parser.add_argument('-y', '--ylim', type=int,
@@ -487,10 +521,7 @@ def main():
     return 0
 
   set_ru_model(args.ru_model)
-  if args.f:
-    fp = open(args.f, 'w', encoding=args.enc, newline='')
-  else:
-    fp = io.TextIOWrapper(sys.stdout.buffer, encoding=args.enc, newline='')
+  fp = open(args.f, 'w', encoding=args.enc, newline='')
 
   # #############################
   # 引数解析
@@ -517,11 +548,11 @@ def main():
                   xlim=args.xlim, ylim=args.ylim,
                   ymin=args.ymin, ymax=args.ymax,
                   title=args.title if args.title else '',
-                  dimension=args.dimension)
+                  dimensions=args.dimension)
 
 
 if __name__ == '__main__':
-  main()
+  sys.exit(main())
 
 
 # vim:set et ts=2 sts=2 sw=2 tw=80:

@@ -70,6 +70,7 @@ def _readJsons(fnames: list, ret: dict) -> dict:
     data['0coin'] = len(gifts)
     data['rate'] = data['livescore'] / data['total_gift']
     assert data['rate'] > 1.6, data
+    assert 'followers' in data or data['date'] <= "20251022", data
 
     # if xlim and data['total_gift'] > xlim:
     #   continue
@@ -141,9 +142,9 @@ def comma_formatter(x, pos):
   if value > 100:
     value_str = f"{int(value)}"
   elif value > 10:
-    value_str = f"{value:.1f}".rstrip('0').rstrip('.')
+    value_str = f"{value:.1f}"
   else:
-    value_str = f"{value:.2f}".rstrip('0').rstrip('.')
+    value_str = f"{value:.2f}"
   return f"{value_str}{suffix}"
 
 
