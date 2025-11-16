@@ -301,7 +301,6 @@ def plot_rank_zones(ax2, xlim, ymin: float, zorder=0):
         zorder=zorder,
     )
 
-
 def write_scatter(fname: str, jsons: dict,
                   plot_livescore: bool = True,
                   plot_rate: bool = True,
@@ -309,6 +308,8 @@ def write_scatter(fname: str, jsons: dict,
                   plot_3xmodel: bool = True,
                   xlim=None, ylim=None, title: str = '',
                   ymin: float = 2.4, ymax: float = 3.5,
+                  heatmap: str = None,
+                  cmap: str = 'jet',
                   dimensions=[]):
 
   fig, ax1 = plt.subplots()
@@ -336,14 +337,14 @@ def write_scatter(fname: str, jsons: dict,
     # 左軸：gift - livescore の散布図を描画する
     y_livescore = [v[1] for v in xy if not v[3]]
     ax1.scatter(xinvalid, y_livescore,
-                color='#1f77b4', alpha=0.8, s=2, zorder=8,
+                color='#1f77b4', alpha=0.8, s=1, zorder=8,
                 marker='.')
 
   if plot_rate:
     # 右軸：livescore / gift の散布図を描画する
     y_livescore_per_gift_invalid = [v[1] / v[0] for v in xy if not v[3]]
     ax2.scatter(xinvalid, y_livescore_per_gift_invalid,
-                color='#FFCC00', alpha=0.8, s=2, zorder=8,
+                color='#FFCC00', alpha=0.8, s=1, zorder=8,
                 marker='.')
 
   xvalid = [v[0] for v in xy if v[3]]
@@ -376,10 +377,32 @@ def write_scatter(fname: str, jsons: dict,
     else:
       label += f' [{len(xy)} samples]'
 
-    ax2.scatter(xvalid, y_livescore_per_gift, label=label,
-                color='#FFCC00', alpha=0.3, s=s, marker='o',
-                edgecolors=edgecolors, linewidths=linewidths,
-                zorder=10)
+    if heatmap:
+      # ヒートマップ表示
+      c = [v[2][heatmap] for v in xy if v[3]]
+      if heatmap == 'class':
+        vmax = None
+        vmin = 0
+      elif heatmap == '0coin':
+        vmax = 50
+        vmin = 1
+      else:
+        vmax = 15
+        vmin = 1
+
+      sc = ax2.scatter(xvalid, y_livescore_per_gift, label=label,
+                       c=c, cmap=cmap,
+                       alpha=0.7, s=1, marker='.',
+                       edgecolors=edgecolors, linewidths=linewidths,
+                       zorder=10, vmin=vmin, vmax=vmax)
+      fig.colorbar(sc, ax=ax2, label=f'# of gifters (≧ {heatmap})',
+                   pad=0.10)
+
+    else:
+      ax2.scatter(xvalid, y_livescore_per_gift, label=label,
+                  color='#FFCC00', alpha=0.3, s=s, marker='o',
+                  edgecolors=edgecolors, linewidths=linewidths,
+                  zorder=10)
 
   if False:
     # 薄紫色の補助線
@@ -511,6 +534,22 @@ def main() -> int:
                       help="do not plot 3x gift model")
   parser.add_argument('--ru-model', type=int, choices=[0, 1, 2, 3],
                       default=0)
+  parser.add_argument('--heatmap', choices=['0coin', '10coin',
+                                            '100coin', '1000coin',
+                                            'class'])
+  parser.add_argument('--cmap',
+                      choices=[
+                               # Perceptually Uniform Sequential
+                               'viridis', 'plasma', 'inferno', 'magma', 'cividis',
+                               # Diverging
+                               # 'managua', 'vanimo',
+                               # Cyclic
+                               'twilight', 'twilight_shifted', 'hsv',
+                               # Qualiative
+                               'tab20', 'tab20b', 'tab20c',
+                               # miscellaneous
+                               'jet', 'turbo', 'gist_rainbow'],
+                      default='jet')
   parser.add_argument('--doctest', action='store_true')
 
   args = parser.parse_args()
@@ -548,6 +587,8 @@ def main() -> int:
                   xlim=args.xlim, ylim=args.ylim,
                   ymin=args.ymin, ymax=args.ymax,
                   title=args.title if args.title else '',
+                  heatmap=args.heatmap,
+                  cmap=args.cmap,
                   dimensions=args.dimension)
 
 

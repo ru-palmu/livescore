@@ -101,9 +101,10 @@ def main():
     return
 
   if args.key is None:
-    args.key = ['date', 'rank', 'date', 'user_rank',
+    args.key = ['date', 'rank', 'user_rank',
                 'total_gift', 'livescore', 'rate',
-                'max_coin', '100coin', '10coin', '0coin']
+                'max_coin', '1000coin',
+                '100coin', '10coin', '0coin']
 
   jsons = readJsons(args.args)
 

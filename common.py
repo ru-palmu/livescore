@@ -69,6 +69,7 @@ def _readJsons(fnames: list, ret: dict) -> dict:
     data['10coin'] = (gifts >= 10).sum()
     data['0coin'] = len(gifts)
     data['rate'] = data['livescore'] / data['total_gift']
+    data['class'] = classify(data)
     assert data['rate'] > 1.6, data
     assert 'followers' in data or data['date'] <= "20251022", data
 
@@ -147,5 +148,56 @@ def comma_formatter(x, pos):
     value_str = f"{value:.2f}"
   return f"{value_str}{suffix}"
 
+
+def classify_geq(sep: list, d: dict) -> bool:
+  x = d['total_gift']
+  y = d['rate']
+  for i in range(len(sep) - 1):
+    x1, y1 = sep[i]
+    x2, y2 = sep[i + 1]
+
+    # 2点を結ぶ直線より上にあるか．
+    if (x2 - x1) * (y - y1) - (y2 - y1) * (x - x1) < 0:
+      return False
+  return True
+
+
+def classify(d: dict) -> int:
+  """どのグループに属するか.
+
+  0: 跳ねている
+  1: 跳ねていない A
+  2: 跳ねていない B
+  ...
+
+  Z: (0, 3.1)..(40k, 2.8)..(140k, 2.6)
+  A: (0, 2.8)..(20k, 2.6)..(120k, 2.3)
+  B: (0, 2.4)..(20k, 2.3)..( 60k, 2.1)
+
+  >>> classify({'total_gift': 20_000, 'rate': 3.1})
+  0
+  >>> classify({'total_gift': 40_000, 'rate': 3.0})
+  0
+  >>> classify({'total_gift': 80_000, 'rate': 2.9})
+  0
+  >>> classify({'total_gift': 20_000, 'rate': 2.8})
+  1
+  >>> classify({'total_gift': 100_000, 'rate': 2.5})
+  1
+  >>> classify({'total_gift': 80_000, 'rate': 2.3})
+  2
+  """
+  if classify_geq([[0, 3.1], [40000, 2.8], [140000, 2.6]], d):
+    return 0
+  if classify_geq([[0, 2.8], [20000, 2.6], [120000, 2.3]], d):
+    return 1
+  if classify_geq([[0, 2.4], [20000, 2.3], [60000, 2.1]], d):
+    return 2
+  return 3
+
+
+if __name__ == "__main__":
+  import doctest
+  doctest.testmod()
 
 # vim:set et ts=2 sts=2 sw=2 tw=80:
